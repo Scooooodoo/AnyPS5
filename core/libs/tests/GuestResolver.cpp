@@ -24,6 +24,65 @@ void Require(bool condition, std::source_location location = std::source_locatio
         std::abort();
     }
 }
+
+void CheckNameInfoOptionalOutputs() {
+    struct AddressCase {
+        std::array<unsigned char, 28> bytes;
+        std::uint32_t length;
+        const char* host;
+    };
+    std::array<AddressCase, 2> addresses{{
+        {{{16, 2, 0x6d, 0x06, 127, 0, 0, 1}}, 16, "127.0.0.1"},
+        {{{28, 28, 0x6d, 0x06}}, 28, "::1"}
+    }};
+    addresses[1].bytes[23] = 1;
+    for (const auto& address : addresses) {
+        const auto original = address.bytes;
+        const auto hostSize = static_cast<std::uint32_t>(std::strlen(address.host) + 1);
+        constexpr char service[] = "27910";
+        const std::uint32_t hostCapacities[]{0, 1, hostSize - 1, hostSize, 32};
+        const std::uint32_t serviceCapacities[]{0, 1, sizeof(service) - 1, sizeof(service), 32};
+        for (bool hostPresent : {false, true}) {
+            for (bool servicePresent : {false, true}) {
+                for (auto hostCapacity : hostCapacities) {
+                    for (auto serviceCapacity : serviceCapacities) {
+                        for (int flags : {10, 26}) {
+                            std::array<char, 34> host, port;
+                            host.fill('~');
+                            port.fill('~');
+                            auto expectedHost = host;
+                            auto expectedPort = port;
+                            const bool wantHost = hostPresent && hostCapacity != 0;
+                            const bool wantService = servicePresent && serviceCapacity != 0;
+                            const bool overflow = (wantHost && hostCapacity < hostSize) ||
+                                (wantService && serviceCapacity < sizeof(service));
+                            if (!overflow) {
+                                if (wantHost) std::memcpy(expectedHost.data() + 1, address.host, hostSize);
+                                if (wantService) std::memcpy(expectedPort.data() + 1, service, sizeof(service));
+                            }
+                            Require(getnameinfo_nid_postfix(address.bytes.data(), address.length,
+                                hostPresent ? host.data() + 1 : nullptr, hostCapacity,
+                                servicePresent ? port.data() + 1 : nullptr, serviceCapacity, flags) == (overflow ? 14 : 0));
+                            Require(host == expectedHost && port == expectedPort && address.bytes == original);
+                        }
+                    }
+                }
+            }
+        }
+        for (int flags = 0; flags < 32; ++flags)
+            Require(getnameinfo_nid_postfix(address.bytes.data(), address.length, nullptr, UINT32_MAX, nullptr, UINT32_MAX, flags) == 0);
+        Require(getnameinfo_nid_postfix(address.bytes.data(), address.length, nullptr, 0, nullptr, 0, 32) == 3);
+        Require(getnameinfo_nid_postfix(address.bytes.data(), address.length - 1, nullptr, 1, nullptr, 1, 10) == 5);
+        auto invalid = address.bytes;
+        invalid[0] = 0;
+        Require(getnameinfo_nid_postfix(invalid.data(), address.length, nullptr, 1, nullptr, 1, 10) == 5);
+        invalid = address.bytes;
+        invalid[1] = 0;
+        Require(getnameinfo_nid_postfix(invalid.data(), address.length, nullptr, 0, nullptr, 0, 10) == 5);
+    }
+    Require(getnameinfo_nid_postfix(nullptr, 0, nullptr, 0, nullptr, 0, 10) == 5);
+}
+
 int main() {
     auto* legacy = gethostbyname_nid_postfix("127.0.0.1");
     Require(legacy && legacy->name && std::strcmp(legacy->name, "127.0.0.1") == 0);
@@ -107,6 +166,7 @@ int main() {
     Require(getnameinfo_nid_postfix(v4.data(), 2, host, sizeof(host), nullptr, 0, 10) == 5);
     Require(getnameinfo_nid_postfix(v4.data(), v4.size(), host, sizeof(host), nullptr, 0, 32) == 3);
     Require(getnameinfo_nid_postfix(v4.data(), v4.size(), host, 1, nullptr, 0, 10) == 14);
+    CheckNameInfoOptionalOutputs();
     Require(std::strcmp(gai_strerror_nid_postfix(0), "Success") == 0);
     Require(std::strcmp(gai_strerror_nid_postfix(3), "Invalid value for ai_flags") == 0);
     Require(std::strcmp(gai_strerror_nid_postfix(8), "hostname nor servname provided, or not known") == 0);

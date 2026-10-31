@@ -360,7 +360,6 @@ int APS5_VABI getnameinfo_nid_postfix(const void* address, std::uint32_t length,
     char* host, std::uint32_t hostLength, char* service, std::uint32_t serviceLength, int flags) {
     // PS5 sockaddr begins with byte-sized length and family. The host's does not.
     if (!address || length < 2) return 5;
-    if ((!host && hostLength) || (!service && serviceLength)) return 4;
     if ((flags & ~0x1f) != 0) return 3;
     const auto* bytes = static_cast<const unsigned char*>(address);
     sockaddr_storage native{};
@@ -382,6 +381,9 @@ int APS5_VABI getnameinfo_nid_postfix(const void* address, std::uint32_t length,
         std::memcpy(&v6.sin6_scope_id, bytes + 24, 4);
         nativeLength = sizeof(v6);
     } else return 5;
+    const bool wantHost = host && hostLength;
+    const bool wantService = service && serviceLength;
+    if (!wantHost && !wantService) return 0;
     int nativeFlags = 0;
     if (flags & 1) nativeFlags |= NI_NOFQDN;
     if (flags & 2) nativeFlags |= NI_NUMERICHOST;
@@ -393,8 +395,6 @@ int APS5_VABI getnameinfo_nid_postfix(const void* address, std::uint32_t length,
     // guest ABI, and neither guest output is partially modified on overflow.
     char resolvedHost[NI_MAXHOST]{};
     char resolvedService[NI_MAXSERV]{};
-    const bool wantHost = host && hostLength;
-    const bool wantService = service && serviceLength;
     const int error = ::getnameinfo(reinterpret_cast<const sockaddr*>(&native), nativeLength,
         wantHost ? resolvedHost : nullptr, wantHost ? sizeof(resolvedHost) : 0,
         wantService ? resolvedService : nullptr, wantService ? sizeof(resolvedService) : 0, nativeFlags);
