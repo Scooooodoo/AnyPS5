@@ -1028,7 +1028,6 @@ int APS5_VABI sceIcuLegacyUnknown_Pl2dR3FmR24_nid_no_patch();
 int APS5_VABI sceIcuLegacyUnknown_PotTo8Ki_minus_tA_nid_no_patch();
 int APS5_VABI sceIcuLegacyUnknown_PpGttpUbT8k_nid_no_patch();
 int APS5_VABI sceIcuLegacyUnknown_PrTDL68Pdfg_nid_no_patch();
-int APS5_VABI sceIcuLegacyUnknown_PuLoqDSNPPw_nid_no_patch();
 int APS5_VABI sceIcuLegacyUnknown_PvsbY_minus_71gOs_nid_no_patch();
 int APS5_VABI sceIcuLegacyUnknown_PxlmsPnf_plus_Nc_nid_no_patch();
 int APS5_VABI sceIcuLegacyUnknown_Py8YS1tOPW4_nid_no_patch();

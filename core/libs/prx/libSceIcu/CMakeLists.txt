@@ -3,6 +3,7 @@ target_include_directories(libSceIcu PRIVATE ${LIBS_INCLUDE_DIR})
 configure_windows_unwind(libSceIcu)
 target_sources(libSceIcu PRIVATE ConverterCallbacks.cpp)
 target_sources(libSceIcu PRIVATE LegacyExports.cpp)
+target_sources(libSceIcu PRIVATE ByteTermination.cpp)
 target_sources(libSceIcu PRIVATE CString.cpp)
 target_sources(libSceIcu PRIVATE CompareIter.cpp)
 target_sources(libSceIcu PRIVATE Space.cpp)
@@ -10,6 +11,28 @@ target_sources(libSceIcu PRIVATE Utf8.cpp)
 target_sources(libSceIcu PRIVATE Resource.cpp)
 
 if(BUILD_TESTING)
+    add_test_executable(guest_icu_byte_termination_tests ${CMAKE_CURRENT_SOURCE_DIR}/tests/ByteTermination.cpp)
+    target_include_directories(guest_icu_byte_termination_tests PRIVATE ${LIBS_INCLUDE_DIR})
+    target_link_libraries(guest_icu_byte_termination_tests PRIVATE ${CMAKE_DL_LIBS})
+    if(WIN32)
+        target_link_libraries(guest_icu_byte_termination_tests PRIVATE libc)
+    endif()
+    configure_windows_unwind(guest_icu_byte_termination_tests)
+    add_custom_target(guest_icu_byte_termination_libraries DEPENDS
+        ${PATCHED_DIR}/libSceIcu.prx ${PATCHED_DIR}/libkernel.prx ${PATCHED_DIR}/libc.prx)
+    add_dependencies(guest_icu_byte_termination_tests guest_icu_byte_termination_libraries)
+    add_test(NAME guest_icu_byte_termination COMMAND guest_icu_byte_termination_tests
+        $<TARGET_FILE:libSceIcu> u_terminateChars_nid_postfix)
+    add_test(NAME guest_icu_byte_termination_nid COMMAND guest_icu_byte_termination_tests
+        ${PATCHED_DIR}/libSceIcu.prx PuLoqDSNPPw)
+    set_tests_properties(guest_icu_byte_termination guest_icu_byte_termination_nid PROPERTIES TIMEOUT 20)
+    if(WIN32)
+        set_tests_properties(guest_icu_byte_termination PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:libSceIcu>")
+        set_tests_properties(guest_icu_byte_termination_nid PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${PATCHED_DIR}")
+    endif()
+
     add_test_executable(guest_icu_utf8_tests ${LIBS_INCLUDE_DIR}/tests/GuestIcuUtf8.cpp)
     target_include_directories(guest_icu_utf8_tests PRIVATE ${LIBS_INCLUDE_DIR})
     target_link_libraries(guest_icu_utf8_tests PRIVATE libSceIcu libc)
