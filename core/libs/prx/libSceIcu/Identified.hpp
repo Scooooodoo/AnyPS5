@@ -3,6 +3,8 @@
 #include "prx/libc/include/general/VabiMacros.hpp"
 
 extern "C" {
+std::int32_t APS5_VABI u_terminateChars_nid_postfix(char* destination, std::int32_t capacity, std::int32_t length, std::int32_t* status);
+std::int32_t APS5_VABI u_terminateUChars_nid_postfix(char16_t* destination, std::int32_t capacity, std::int32_t length, std::int32_t* status);
 int APS5_VABI UCNV_FROM_U_CALLBACK_ESCAPE_nid_postfix();
 int APS5_VABI UCNV_FROM_U_CALLBACK_SUBSTITUTE_nid_postfix();
 int APS5_VABI UCNV_TO_U_CALLBACK_ESCAPE_nid_postfix();
