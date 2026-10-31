@@ -1,14 +1,33 @@
 #include "prx/libSceLibreSsl3/include/Api.hpp"
 #include "prx/libc/include/General.hpp"
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <stdexcept>
+
+namespace {
+
+constexpr std::size_t BioFlagsOffset = 40;
+
+void UpdateBioFlags(LibreSsl3Bio* bio, std::uint32_t set, std::uint32_t clear) {
+    if (!bio) throw std::invalid_argument("BIO flags: null BIO");
+    auto* storage = reinterpret_cast<unsigned char*>(bio) + BioFlagsOffset;
+    std::uint32_t flags;
+    std::memcpy(&flags, storage, sizeof(flags));
+    flags = (flags | set) & ~clear;
+    std::memcpy(storage, &flags, sizeof(flags));
+}
+
+}
 
 extern "C" {
 
-int APS5_VABI BIO_clear_flags_nid_postfix() {
-    NotImplemented_nid_no_patch(__func__);
+void APS5_VABI BIO_clear_flags_nid_postfix(LibreSsl3Bio* bio, int flags) {
+    UpdateBioFlags(bio, 0, static_cast<std::uint32_t>(flags));
 }
 
-int APS5_VABI BIO_set_flags_nid_postfix() {
-    NotImplemented_nid_no_patch(__func__);
+void APS5_VABI BIO_set_flags_nid_postfix(LibreSsl3Bio* bio, int flags) {
+    UpdateBioFlags(bio, static_cast<std::uint32_t>(flags), 0);
 }
 
 int APS5_VABI BN_clear_free_nid_postfix() {

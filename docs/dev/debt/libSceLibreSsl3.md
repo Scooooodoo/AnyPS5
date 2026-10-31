@@ -8,6 +8,7 @@
 
 - [ASN.1 integer decoding](../../../core/libs/prx/libSceLibreSsl3/src/IntegerDecoder.cpp) - nothing is checked on a console, and the console's application-heap ABI is unverified. Rejections, allocation failures, their error codes and the old output follow [13.42 native-PC evidence](https://github.com/boykopovar/AnyPS5/pull/10948#issuecomment-6412137728) from a recording allocator. Nonnegative null input faults natively and throws here. Error combinations the evidence does not cover and content over `INT_MAX` bytes follow [LibreSSL 4.0.0](https://github.com/libressl/openbsd/tree/ce488b78e0bd994780569df718596b9776ff681a/src/lib/libcrypto/asn1). Closes when: compared with the console.
 - [CRYPTO_memcmp](../../../core/libs/prx/libSceLibreSsl3/Export.cpp) follows the public [LibreSSL signature and equality contract](https://man.openbsd.org/CRYPTO_memcmp.3), without PS5 verification. The exact nonzero result for unequal buffers is unspecified by that contract. Content-independent execution of its volatile byte reads still depends on the compiler; inspect optimized code when changing toolchains. Closes when: measured on a PS5 and the supported toolchains' generated code is checked.
+- [BIO_set_flags and BIO_clear_flags](../../../core/libs/prx/libSceLibreSsl3/AdditionalExports.cpp) (libSceLibreSsl3) - console layout and interoperability with the forwarded parent BIO exports are unverified. Signatures and mask updates follow LibreSSL 4.0.0's [bio.h](https://github.com/libressl/openbsd/blob/ce488b78e0bd994780569df718596b9776ff681a/src/lib/libcrypto/bio/bio.h) and [bio_lib.c](https://github.com/libressl/openbsd/blob/ce488b78e0bd994780569df718596b9776ff681a/src/lib/libcrypto/bio/bio_lib.c). Only the 32-bit flags at offset 40 of [bio_local.h](https://github.com/libressl/openbsd/blob/ce488b78e0bd994780569df718596b9776ff681a/src/lib/libcrypto/bio/bio_local.h) are accessed; the opaque BIO is not otherwise modelled. The parent's LibreSSL 2.5.4 layout differs. Null BIOs throw instead of faulting. Concurrent updates require caller synchronization as in the reference. Closes when: measured on a PS5 and checked with constructed BIOs.
 - [MD5 and SHA1](../../../core/libs/prx/libSceLibreSsl3/src/Digest.cpp) (libSceLibreSsl3) - follow LibreSSL's [md5.c, sha1.c](https://github.com/libressl/openbsd/tree/bc9483725c5815efb64b6d9acc52fc5fba139212/src/lib/libcrypto) and hash through libSceLibreSsl's `MD5_*` and `SHA1_*`. A null digest buffer, which LibreSSL 4.0.0 does not check, throws. Nothing is checked on the console
 - [EVP_PKEY_up_ref, EC_KEY_up_ref and RSA_up_ref](../../../core/libs/prx/libSceLibreSsl3/src/Key.cpp) - console layouts and retain/release interoperability are unverified. The 32-byte EVP, 64-byte EC and 152-byte RSA layouts, with counters at offsets 4, 48 and 104, follow [LibreSSL 4.0.0](https://github.com/libressl/openbsd/tree/ce488b78e0bd994780569df718596b9776ff681a/src/lib/libcrypto) `evp/evp_local.h`, `evp/p_lib.c`, `ec/ec_local.h`, `ec/ec_key.c`, `rsa/rsa_local.h` and `rsa/rsa_lib.c`; the RSA layout has no `engine` field, unlike libSceLibreSsl's `LibreSslRsa`. Atomic retains replace its internal mutex; future releases must synchronize with the same counters. With no key constructors/destructors in this module, tests use caller-owned objects without validating allocator or destruction compatibility. Null keys and signed-counter overflow, undefined upstream, throw without mutation. Closes when: console layouts and lifetime interoperability are measured.
 - [EVP_PKEY_get0_RSA, EVP_PKEY_get0_DSA and EVP_PKEY_get0_DH](../../../core/libs/prx/libSceLibreSsl3/src/PkeyGetters.cpp) (libSceLibreSsl3) - a key of another type throws, where [LibreSSL 4.0.0](https://github.com/libressl/openbsd/blob/ce488b78e0bd994780569df718596b9776ff681a/src/lib/libcrypto/evp/p_lib.c#L630-L751) queues `EVP_R_EXPECTING_AN_RSA_KEY`, `EVP_R_EXPECTING_A_DSA_KEY` or `EVP_R_EXPECTING_A_DH_KEY` and returns NULL, because the LibreSSL3 error queue is not modelled; a null key throws, where LibreSSL dereferences it. A matching key returns the inner key pointer of the 32-byte layout without taking a reference: `EVP_PKEY_RSA` (6) or `EVP_PKEY_RSA_PSS` (912) for RSA, `EVP_PKEY_DSA` (116) and `EVP_PKEY_DH` (28). None of this is verified on a PS5
@@ -20,7 +21,7 @@
 
 ### Additional callable export inventory
 
-- [Additional exports](../../../core/libs/prx/libSceLibreSsl3/AdditionalExports.cpp) declare 176 callable exports: 50 named and 126 known only by NID. Every entry throws. Parameterless `int` declarations are unknown-signature placeholders, not verified ABI contracts. Names/NIDs match the 13.60 export table. No functional implementation or title unblock is claimed.
+- [Additional exports](../../../core/libs/prx/libSceLibreSsl3/AdditionalExports.cpp) have 174 remaining unimplemented callable exports: 164 named and 10 known only by NID. Every listed entry throws. Parameterless `int` declarations are unknown-signature placeholders, not verified ABI contracts. Names/NIDs match the 13.60 export table. No functional implementation or title unblock is claimed.
 
 | Name | NID |
 | --- | --- |
@@ -38,7 +39,6 @@
 | `TLS_method` | `31eWdro1jqs` |
 | `unknown` | `3KZ-L4y1gak` |
 | `EVP_chacha20_poly1305` | `3m4CmAyOXwQ` |
-| `BIO_clear_flags` | `3sypCuBDdQs` |
 | `EVP_chacha20` | `3tGgkjBQ82A` |
 | `ASN1_INTEGER_set` | `3v2Omd4sqcU` |
 | `RSA_set0_factors` | `3wlK0tLONvk` |
@@ -154,7 +154,6 @@
 | `X509_digest` | `k1AHUWet-oU` |
 | `X509V3_set_ctx` | `kO-jQ3HS9kE` |
 | `BIO_meth_set_destroy` | `kPCJUQuguzE` |
-| `BIO_set_flags` | `lLHlEb1nt5U` |
 | `tls_config_set_ciphers` | `lTdt9OsPAV0` |
 | `SSL_set_alpn_protos` | `lyk0UDADPAc` |
 | `RSA_pkey_ctx_ctrl` | `mKlCMgWMU84` |

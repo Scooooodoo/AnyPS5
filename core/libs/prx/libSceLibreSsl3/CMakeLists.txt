@@ -14,6 +14,29 @@ endif()
 target_sources(libSceLibreSsl3 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/PkeyGetters.cpp)
 
 if(BUILD_TESTING)
+    add_test_executable(guest_libressl3_bio_flags_tests ${CMAKE_CURRENT_SOURCE_DIR}/tests/BioFlags.cpp)
+    target_include_directories(guest_libressl3_bio_flags_tests PRIVATE ${LIBS_INCLUDE_DIR})
+    target_link_libraries(guest_libressl3_bio_flags_tests PRIVATE ${CMAKE_DL_LIBS})
+    if(WIN32)
+        target_link_libraries(guest_libressl3_bio_flags_tests PRIVATE libc)
+    endif()
+    configure_windows_unwind(guest_libressl3_bio_flags_tests)
+    add_custom_target(guest_libressl3_bio_flags_libraries DEPENDS
+        ${PATCHED_DIR}/libSceLibreSsl3.prx ${PATCHED_DIR}/libSceLibreSsl.prx
+        ${PATCHED_DIR}/libkernel.prx ${PATCHED_DIR}/libc.prx)
+    add_dependencies(guest_libressl3_bio_flags_tests guest_libressl3_bio_flags_libraries)
+    add_test(NAME guest_libressl3_bio_flags COMMAND guest_libressl3_bio_flags_tests
+        $<TARGET_FILE:libSceLibreSsl3> BIO_set_flags_nid_postfix BIO_clear_flags_nid_postfix)
+    add_test(NAME guest_libressl3_bio_flags_nid COMMAND guest_libressl3_bio_flags_tests
+        ${PATCHED_DIR}/libSceLibreSsl3.prx lLHlEb1nt5U 3sypCuBDdQs)
+    set_tests_properties(guest_libressl3_bio_flags guest_libressl3_bio_flags_nid PROPERTIES TIMEOUT 20)
+    if(WIN32)
+        set_tests_properties(guest_libressl3_bio_flags PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:libSceLibreSsl3>")
+        set_tests_properties(guest_libressl3_bio_flags_nid PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${PATCHED_DIR}")
+    endif()
+
     add_test_executable(guest_libressl3_pkey_getters_tests ${CMAKE_CURRENT_SOURCE_DIR}/tests/PkeyGetters.cpp)
     target_include_directories(guest_libressl3_pkey_getters_tests PRIVATE ${LIBS_INCLUDE_DIR})
     target_link_libraries(guest_libressl3_pkey_getters_tests PRIVATE libSceLibreSsl3 libc)
