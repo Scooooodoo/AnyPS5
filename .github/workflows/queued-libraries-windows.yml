@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: queued-libraries-windows-${{ github.ref }}
+  group: queued-libraries-windows-${{ github.sha }}
   cancel-in-progress: true
 
 env:
@@ -22,24 +22,16 @@ env:
 jobs:
   windows-msys2:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       max-parallel: 3
       matrix:
         include:
-          - name: getnameinfo
-            ref: 00efcd24909c9a1e7efc36f75f9f447536c5b3bb
-            targets: "guest_resolver_tests guest_raw_resolver_tests guest_resolver_socket_types_tests guest_service_database_tests"
-            tests: "^(guest_resolver|guest_raw_resolver|guest_resolver_socket_types|guest_service_database)$"
-          - name: bio
-            ref: 32cc2e02a8ccdfd0c4bd88747539a0f07bf250f8
-            targets: "guest_libressl3_bio_flags_tests guest_crypto_memcmp_tests guest_libressl3_stack_tests guest_libressl3_cipher_tests guest_libressl3_digest_context_tests"
-            tests: "^(guest_libressl3_bio_flags(_nid)?|guest_crypto_memcmp|guest_libressl3_stack|guest_libressl3_cipher|guest_libressl3_digest_context)$"
-          - name: icu
-            ref: 7262860a62ab15736b8639f14b15db9ba5b40393
-            targets: "guest_icu_termination_tests guest_icu_version_tests guest_icu_utf8_tests guest_icu_unescape_tests"
-            tests: "^(guest_icu_termination(_nid)?|guest_icu_version|guest_icu_utf8|guest_icu_unescape)$"
+          - name: icu-byte
+            ref: 787e3df14298c821ee99fb16255cc150522cf84d
+            targets: "guest_icu_byte_termination_tests guest_icu_version_tests guest_icu_utf8_tests guest_icu_unescape_tests"
+            tests: "^(guest_icu_byte_termination(_nid)?|guest_icu_version|guest_icu_utf8|guest_icu_unescape)$"
     defaults:
       run:
         shell: bash
