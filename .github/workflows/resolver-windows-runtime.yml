@@ -1,0 +1,175 @@
+name: Resolver Windows runtime A-B
+
+on:
+  push:
+    branches: [ci/pr13822-windows-resolver]
+    paths: [.github/workflows/resolver-windows-runtime.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resolver-windows-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CONFIGURE: >-
+    -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+    -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+jobs:
+  windows-msys2:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - id: submodules
+        name: Key the submodules on their commits
+        run: |
+          echo "key=$(git ls-files -s | awk '$1 == "160000" { print $2, $4 }' | cat - .gitmodules | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+          echo "ffmpeg=$(git rev-parse HEAD:3rdparty/ffmpeg-core)" >> "$GITHUB_OUTPUT"
+      - id: submodule-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/submodule-gitdirs.tar
+          key: submodule-gitdirs-${{ runner.os }}-${{ steps.submodules.outputs.key }}
+      - name: Check out the submodules
+        run: |
+          if [ -f "$RUNNER_TEMP/submodule-gitdirs.tar" ]; then tar --force-local -xf "$RUNNER_TEMP/submodule-gitdirs.tar"; fi
+          git submodule update --init --recursive --depth 1 --jobs 8
+      - if: steps.submodule-cache.outputs.cache-hit != 'true'
+        run: tar --force-local -cf "$RUNNER_TEMP/submodule-gitdirs.tar" .git/modules
+      - if: steps.submodule-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/submodule-gitdirs.tar
+          key: submodule-gitdirs-${{ runner.os }}-${{ steps.submodules.outputs.key }}
+      - name: Use the CA bundle of Git for Windows
+        run: |
+          for prefix in ucrt64 mingw64; do
+            bundle="C:/Program Files/Git/$prefix/etc/ssl/certs/ca-bundle.crt"
+            if [ -f "$bundle" ]; then echo "SSL_CERT_FILE=$bundle" >> "$GITHUB_ENV"; exit 0; fi
+          done
+          echo "::error::No CA bundle found in Git for Windows"; exit 1
+      - id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+      - shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: Add-Content -LiteralPath $env:GITHUB_PATH -Value "$env:MSYS2_LOCATION\ucrt64\bin"
+      - uses: hendrikmuhs/ccache-action@v1.2.24
+        with:
+          key: windows-msys2
+          save: ${{ github.ref == 'refs/heads/main' }}
+          evict-old-files: job
+      - id: ffmpeg-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: build/externals
+          key: ffmpeg-${{ runner.os }}-${{ steps.submodules.outputs.ffmpeg }}
+      - shell: cmd
+        run: cmake -S . -B build %CONFIGURE% "-DANYPS5_AGC_EXECUTION_TESTS=F16ToF32Unpack;F64FmaSubnormals;RegistrationPrepareShutdown"
+      - if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        continue-on-error: true
+        with:
+          path: build/externals
+          key: ${{ steps.ffmpeg-cache.outputs.cache-primary-key }}
+      - name: Check that every test executable is registered with ctest
+        shell: cmd
+        run: python tools/check_test_registration.py build
+      - name: Inspect native Windows resolver records
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/resolver-host-probe.cpp" <<'CPP'
+          #include <winsock2.h>
+          #include <ws2tcpip.h>
+          #include <cstdio>
+          #include <initializer_list>
+          int main() {
+              WSADATA data{};
+              if (WSAStartup(MAKEWORD(2, 2), &data)) return 1;
+              for (const char* node : {"127.0.0.1", "::1"}) {
+                  for (const char* service : {static_cast<const char*>(nullptr), "0", "27910", "65535"}) {
+                      for (int type : {0, SOCK_STREAM, SOCK_DGRAM}) {
+                          addrinfo hints{};
+                          hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV;
+                          hints.ai_socktype = type;
+                          hints.ai_protocol = type == SOCK_STREAM ? IPPROTO_TCP : type == SOCK_DGRAM ? IPPROTO_UDP : 0;
+                          addrinfo* result = nullptr;
+                          int error = getaddrinfo(node, service, &hints, &result);
+                          std::printf("native node=%s service=%s type=%d protocol=%d error=%d\n",
+                              node, service ? service : "(null)", type, hints.ai_protocol, error);
+                          if (error) return 2;
+                          for (auto* item = result; item; item = item->ai_next)
+                              std::printf("  family=%d type=%d protocol=%d\n", item->ai_family, item->ai_socktype, item->ai_protocol);
+                          freeaddrinfo(result);
+                      }
+                  }
+              }
+              return WSACleanup();
+          }
+          CPP
+          g++ -std=c++20 "$RUNNER_TEMP/resolver-host-probe.cpp" -lws2_32 -o "$RUNNER_TEMP/resolver-host-probe.exe"
+          "$RUNNER_TEMP/resolver-host-probe.exe" | tee resolver-host-probe.log
+      - name: Build actual guest resolver tests and their libraries
+        shell: cmd
+        run: cmake --build build --parallel 4 --target guest_resolver_socket_types_tests guest_resolver_tests guest_raw_resolver_tests guest_service_database_tests
+      - name: Run corrected resolver tests
+        shell: cmd
+        run: ctest --test-dir build -R "^(guest_resolver_socket_types|guest_resolver|guest_raw_resolver|guest_service_database)$" --no-tests=error --output-on-failure --timeout 30 --output-log "%GITHUB_WORKSPACE%/build/corrected.log" --output-junit "%GITHUB_WORKSPACE%/build/corrected.xml"
+      - name: Reproduce the reviewed Windows failure with the old resolver
+        shell: bash
+        run: |
+          git fetch --no-tags origin 5dc03b12f0f209bfc3645b3ca846ade4c4eda869
+          git show 5dc03b12f0f209bfc3645b3ca846ade4c4eda869:core/libs/prx/libScePosixForWebKit/Resolver.cpp > core/libs/prx/libScePosixForWebKit/Resolver.cpp
+          git show 5dc03b12f0f209bfc3645b3ca846ade4c4eda869:core/libs/tests/ResolverSocketTypes.cpp > core/libs/tests/ResolverSocketTypes.cpp
+          cmake --build build --parallel 4 --target guest_resolver_socket_types_tests
+          set +e
+          ctest --test-dir build -R '^guest_resolver_socket_types$' --no-tests=error --output-on-failure --timeout 30 --output-log "$GITHUB_WORKSPACE/build/reviewed.log" --output-junit "$GITHUB_WORKSPACE/build/reviewed.xml"
+          status=$?
+          set -e
+          if [ "$status" -ne 8 ]; then echo "Expected the reviewed resolver to fail the regression, got $status"; exit 1; fi
+          if ! grep -q 'lookup returned a raw or invalid socket type' build/reviewed.log; then cat build/reviewed.log; exit 1; fi
+      - name: Restore the correction and rerun affected runtime tests
+        shell: bash
+        run: |
+          git restore core/libs/prx/libScePosixForWebKit/Resolver.cpp core/libs/tests/ResolverSocketTypes.cpp
+          cmake --build build --parallel 4 --target guest_resolver_socket_types_tests guest_resolver_tests guest_raw_resolver_tests guest_service_database_tests
+          ctest --test-dir build -R '^(guest_resolver_socket_types|guest_resolver|guest_raw_resolver|guest_service_database)$' --no-tests=error --output-on-failure --timeout 30 --output-log "$GITHUB_WORKSPACE/build/final.log" --output-junit "$GITHUB_WORKSPACE/build/final.xml"
+      - name: Report tests slower than 30 s
+        if: ${{ !cancelled() }}
+        run: |
+          [ -f build/ctest.log ] || exit 0
+          awk '/Test +#[0-9]+: / && $NF == "sec" { for (i = 1; i <= NF; i++) if ($i ~ /^#[0-9]+:$/) name = $(i + 1); t = $(NF - 1) + 0; if (t > max[name]) max[name] = t }
+            END { for (name in max) if (max[name] > 30) printf "::warning title=Slow test::%s took %.1f s on %s; tests must finish in 30 s (CONTRIBUTING.md)\n", name, max[name], ENVIRON["RUNNER_OS"] }' build/ctest.log
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: resolver-windows-runtime
+          path: |
+            resolver-host-probe.log
+            build/corrected.log
+            build/corrected.xml
+            build/reviewed.log
+            build/reviewed.xml
+            build/final.log
+            build/final.xml
+          if-no-files-found: ignore
